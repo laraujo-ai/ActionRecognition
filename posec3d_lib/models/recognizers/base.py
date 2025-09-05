@@ -1,0 +1,6 @@
+from typing import Protocol, Any
+
+
+class IRecognizer(Protocol):
+    def __init__(self, preprocessor, model_engine):...
+    def inference(self, data: Any) -> Any: ...
