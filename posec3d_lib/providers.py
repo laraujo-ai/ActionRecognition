@@ -4,7 +4,11 @@ import onnxruntime as ort
 from ultralytics import YOLO
 
 from utils.composer import Posec3dComposer, IComposer
-from models.recognizers.Posec3D import Posec3DRecognizer, IRecognizer
+from models.recognizers.Posec3D import (
+    Posec3DRecognizer,
+    IRecognizer,
+    Posec3DFeatureExtractor,
+)
 from utils.parser import Posec3dConfigParser
 from models.preprocessors.posec3d_preprocessor import (
     BasePreprocessor,
@@ -60,3 +64,10 @@ def get_recognizer(
 ) -> IRecognizer:
     recognizer = Posec3DRecognizer(preprocessor, model_engine, label_map_path)
     return recognizer
+
+
+def get_feature_extractor(
+    preprocessor: BasePreprocessor, model_engine: ort.InferenceSession
+) -> IRecognizer:
+    extractor = Posec3DFeatureExtractor(preprocessor, model_engine)
+    return extractor

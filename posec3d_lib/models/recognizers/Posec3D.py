@@ -1,4 +1,6 @@
 import logging
+import numpy as np
+
 from models.recognizers.base import IRecognizer
 from models.functions import softmax
 from models.preprocessors.posec3d_preprocessor import Posec3dPreprocessor
@@ -44,5 +46,27 @@ class Posec3DRecognizer(IRecognizer):
 
 class Posec3DFeatureExtractor(IRecognizer):
 
-    def __init__(self, preprocessor, model_engine): ...
-    def inference(self, data): ...
+    def __init__(self, preprocessor, model_engine):
+        try:
+            self.model_engine = model_engine
+            self.preprocessor = preprocessor
+            self.input_name = self.model_engine.get_inputs()[0].name
+        except Exception as e:
+            logger.error(f"Failed to initialize Posec3DRecognizer: {e}")
+            raise
+
+    def inference(self, data):
+        try:
+            input_ = self.preprocessor.process(data)
+            outputs = self.model_engine.run(None, {self.input_name: input_})
+            return self.post_process_results(outputs)
+
+        except Exception as e:
+            logger.error(f"Inference failed: {e}")
+            raise
+
+    def post_process_results(self, outputs: list) -> np.ndarray:
+        features = outputs[0]  # Just the first batch for now
+        feature_vector = features.mean(axis=0)
+
+        return feature_vector
