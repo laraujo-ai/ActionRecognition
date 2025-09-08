@@ -3,18 +3,18 @@ import logging
 import onnxruntime as ort
 from ultralytics import YOLO
 
-from utils.composer import Posec3dComposer, IComposer
-from models.recognizers.Posec3D import (
+from posec3d_lib.utils.composer import Posec3dComposer, IComposer
+from posec3d_lib.models.recognizers.Posec3D import (
     Posec3DRecognizer,
     IRecognizer,
     Posec3DFeatureExtractor,
 )
-from utils.parser import Posec3dConfigParser
-from models.preprocessors.posec3d_preprocessor import (
+from posec3d_lib.utils.parser import Posec3dConfigParser
+from posec3d_lib.models.preprocessors.posec3d_preprocessor import (
     BasePreprocessor,
     Posec3dPreprocessor,
 )
-from models.pose_estimators.yolo_estimator import YoloPoseEstimator
+from posec3d_lib.models.pose_estimators.yolo_estimator import YoloPoseEstimator
 
 logger = logging.getLogger(__name__)
 

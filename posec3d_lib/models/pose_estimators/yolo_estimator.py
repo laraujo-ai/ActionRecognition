@@ -4,7 +4,7 @@ import logging
 from typing import Tuple, List
 from collections import defaultdict
 
-from models.pose_estimators.base import BasePoseEstimator
+from posec3d_lib.models.pose_estimators.base import BasePoseEstimator
 
 logger = logging.getLogger(__name__)
 

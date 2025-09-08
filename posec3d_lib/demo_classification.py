@@ -4,9 +4,9 @@ import argparse
 import tempfile
 import logging
 
-from utils.drawing import draw_on_video
-from utils.video_recording import extract_frames
-import providers as prov
+from posec3d_lib.utils.drawing import draw_on_video
+from posec3d_lib.utils.video_recording import extract_frames
+import posec3d_lib.providers as prov
 
 
 def setup_logging():

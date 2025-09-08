@@ -4,7 +4,8 @@ from typing import Sequence
 import os.path as osp
 import os
 
-from utils.drawing import draw_on_video
+from posec3d_lib.utils.drawing import draw_on_video
+
 
 def extract_frames(video_path: str, tmp_dir: str):
     cap = cv2.VideoCapture(video_path)
@@ -33,6 +34,7 @@ def extract_frames(video_path: str, tmp_dir: str):
         cnt += 1
 
     return frame_paths, frames, fps
+
 
 def save_video_to_file(
     frames: Sequence[np.ndarray],

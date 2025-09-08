@@ -2,10 +2,10 @@ from typing import Dict
 import numpy as np
 from collections import defaultdict
 
-from models.preprocessors.base import BasePreprocessor
-from utils.composer import Posec3dComposer
-from data.data_preprocessor import action_data_preprocess_from_packed_data
-from data.processing import pseudo_collate
+from posec3d_lib.models.preprocessors.base import BasePreprocessor
+from posec3d_lib.utils.composer import Posec3dComposer
+from posec3d_lib.data.data_preprocessor import action_data_preprocess_from_packed_data
+from posec3d_lib.data.processing import pseudo_collate
 
 
 class Posec3dPreprocessor(BasePreprocessor):

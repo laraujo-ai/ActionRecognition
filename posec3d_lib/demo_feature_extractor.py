@@ -4,8 +4,8 @@ import argparse
 import tempfile
 import logging
 
-from utils.video_recording import extract_frames
-import providers as prov
+from posec3d_lib.utils.video_recording import extract_frames
+import posec3d_lib.providers as prov
 
 
 def setup_logging():
@@ -52,6 +52,7 @@ def main(args):
         logger.info(f"Got feature vector with size : {feature_vector.shape}")
 
         logger.info("Shutting down the program ...")
+
     except Exception as e:
         logger.error(f"Error in main execution: {e}")
         raise

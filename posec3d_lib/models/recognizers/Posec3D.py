@@ -1,9 +1,9 @@
 import logging
 import numpy as np
 
-from models.recognizers.base import IRecognizer
-from models.functions import softmax
-from models.preprocessors.posec3d_preprocessor import Posec3dPreprocessor
+from posec3d_lib.models.recognizers.base import IRecognizer
+from posec3d_lib.models.functions import softmax
+from posec3d_lib.models.preprocessors.posec3d_preprocessor import Posec3dPreprocessor
 
 logger = logging.getLogger(__name__)
 
