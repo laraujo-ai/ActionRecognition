@@ -11,6 +11,7 @@ import os.path as osp
 from queue import Queue
 from collections import deque
 from threading import Thread, Event
+from typing import Optional, Dict, Any
 
 gi.require_version("Gst", "1.0")
 from gi.repository import Gst, GLib
@@ -21,16 +22,44 @@ logger = logging.getLogger(__name__)
 
 
 class StreamProcessor(IMediaProcessor):
-    """
-    RTSP stream processor with NVIDIA hardware decoding
+    """RTSP stream processor with NVIDIA hardware-accelerated decoding.
+
+    Processes live RTSP video streams using GStreamer pipeline with NVIDIA GPU
+    acceleration for H.264/H.265 decoding. Continuously captures frames and
+    creates non-overlapping video clips for action recognition processing.
+
+    The processing pipeline:
+    RTSP Source → RTP Depay → Parser → NV Decoder → Color Convert → App Sink
+
+    Attributes:
+        rtsp_url: RTSP stream URL to process
+        clips_length: Duration of each clip in seconds
+        stream_codec: Video codec type ("h264" or "h265")
+
+    Example:
+        ```python
+        processor = StreamProcessor(
+            rtsp_url="rtsp://192.168.1.100:554/stream",
+            clips_length=2
+        )
+        processor.configure()
+        processor.start(clips_queue)
+        ```
     """
 
-    def __init__(self, rtsp_url: str, stream_codec: str, rtsp_clips_length: int):
+    def __init__(self, rtsp_url: str, clips_length: int) -> None:
+        """Initialize RTSP stream processor.
+
+        Args:
+            rtsp_url: RTSP stream URL to connect to
+            clips_length: Duration of each video clip in seconds
+
+        Raises:
+            ValueError: If RTSP URL is invalid
+        """
         self.rtsp_url = rtsp_url
         self.clips_length = clips_length
 
-        # Stream properties
-        self.stream_codec = stream_codec
         self.fps = None
         self.video_width = None
         self.video_height = None
@@ -38,33 +67,41 @@ class StreamProcessor(IMediaProcessor):
         self.DEPAY_MAP = {"h264": "rtph264depay", "h265": "rtph265depay"}
         self.PARSER_MAP = {"h264": "h264parse", "h265": "h265parse"}
 
-        # Temp directory management
         self.temp_dir = None
         self.target_dir = None
         self.frame_counter = 0
 
-        # GStreamer pipeline
         self.pipeline = None
         self.app_sink = None
         self.main_loop = None
         self.stop_event = Event()
 
-        # Frame processing
         self.clip_container = None
 
-    def _create_pipeline(self):
-        """Create GStreamer pipeline with NVIDIA hardware decoding"""
+    def _create_pipeline(self) -> None:
+        """Create GStreamer pipeline with NVIDIA hardware decoding.
+
+        Builds a GStreamer pipeline optimized for RTSP streams with hardware
+        acceleration using NVIDIA decoders. The pipeline automatically handles
+        RTP depayloading, parsing, and color space conversion.
+
+        Pipeline structure:
+        rtspsrc -> rtpXXXdepay -> XXXparse -> nvv4l2decoder -> nvvideoconvert -> appsink
+
+        Raises:
+            RuntimeError: If pipeline creation or element linking fails
+        """
 
         # Create pipeline string for RTSP with NVIDIA decoding. nvv4l2decoder -> should be the decoder for jetson.
         pipeline_str = f"""
-        rtspsrc location={self.rtsp_url} latency=0 ! 
-        {self.DEPAY_MAP[self.stream_codec]} ! 
-        {self.PARSER_MAP[self.stream_codec]} ! 
-        nvv4l2decoder enable-max-performance=1 ! 
-        nvvideoconvert ! 
-        video/x-raw,format=BGR ! 
-        appsink name=sink emit-signals=true sync=false max-buffers=2 drop=true
-        """
+            rtspsrc location={self.rtsp_url} latency=0 ! 
+            {self.DEPAY_MAP[self.stream_codec]} ! 
+            {self.PARSER_MAP[self.stream_codec]} ! 
+            nvv4l2decoder enable-max-performance=1 ! 
+            nvvideoconvert ! 
+            video/x-raw,format=BGR ! 
+            appsink name=sink emit-signals=true sync=false max-buffers=2 drop=true
+            """
 
         logger.info(f"Creating pipeline: {pipeline_str}")
         self.pipeline = Gst.parse_launch(pipeline_str)
@@ -148,43 +185,56 @@ class StreamProcessor(IMediaProcessor):
             logger.debug(f"Created clip with {len(current_clip_frames)} frames")
             self.clip_container.clear()
 
-    def init_frame_repo(self):
-        """Initialize temporary directory for frame storage"""
+    def init_frame_repo(self) -> None:
+        """Initialize temporary directory for frame storage.
+
+        Creates a unique temporary directory for storing individual frame files
+        captured from the RTSP stream. Uses stream identifier for organization.
+        """
         self.temp_dir = tempfile.mkdtemp(prefix="stream_frames_")
         stream_name = self.rtsp_url.split("/")[-1] or "stream"
         self.target_dir = osp.join(self.temp_dir, stream_name)
         os.makedirs(self.target_dir, exist_ok=True)
         logger.info(f"Initialized frame repository: {self.target_dir}")
 
-    def configure(self):
-        """Configure stream processor"""
-        # For streams, we estimate these values or get them from caps
-        self.fps = 30  # Default
+    def configure(self) -> None:
+        """Configure stream processor settings and initialize resources.
+
+        Sets up processing parameters, creates temporary storage, and builds
+        the GStreamer pipeline. Uses default FPS estimation for live streams.
+        """
+        self.fps = 30
         self.clip_length_in_frames = int(self.fps * self.clips_length)
         self.clip_container = deque(maxlen=self.clip_length_in_frames)
 
         self.init_frame_repo()
         self._create_pipeline()
 
-    def start(self, clips_queue: Queue):
-        """Start stream processing"""
+    def start(self, clips_queue: Queue) -> None:
+        """Start RTSP stream processing and clip generation.
+
+        Begins capturing frames from the RTSP stream and produces video clips.
+        Runs until stop() is called or an error occurs. The GStreamer main loop
+        handles frame callbacks while this thread waits for completion.
+
+        Args:
+            clips_queue: Queue to receive generated Clip objects
+
+        Raises:
+            RuntimeError: If pipeline fails to start
+        """
         self.clips_queue = clips_queue
         try:
             logger.info(f"Starting RTSP stream: {self.rtsp_url}")
 
-            # Set pipeline to playing
             ret = self.pipeline.set_state(Gst.State.PLAYING)
             if ret == Gst.StateChangeReturn.FAILURE:
                 raise RuntimeError("Failed to start pipeline")
 
-            # Create and run main loop -> this is the loop that lets us comunicate with the gstreamer-processing thread.
             self.main_loop = GLib.MainLoop()
-
-            # Run main loop in separate thread to avoid blocking
             loop_thread = Thread(target=self.main_loop.run, daemon=True)
             loop_thread.start()
 
-            # Wait for stop signal
             self.stop_event.wait()
 
         except Exception as e:
@@ -192,8 +242,11 @@ class StreamProcessor(IMediaProcessor):
         finally:
             self._cleanup_pipeline()
 
-    def stop(self):
-        """Stop stream processing"""
+    def stop(self) -> None:
+        """Stop stream processing gracefully.
+
+        Signals the processing thread to stop and initiates pipeline shutdown.
+        """
         logger.info("Stopping stream processor")
         self.stop_event.set()
 
@@ -207,8 +260,12 @@ class StreamProcessor(IMediaProcessor):
             self.main_loop.quit()
             self.main_loop = None
 
-    def cleanup(self):
-        """Clean up temporary directory"""
+    def cleanup(self) -> None:
+        """Clean up temporary directory and frame files.
+
+        Removes all temporary frame files and directories created during
+        stream processing. Should be called after processing is complete.
+        """
         if self.temp_dir and os.path.exists(self.temp_dir):
             import shutil
 
@@ -219,9 +276,7 @@ class StreamProcessor(IMediaProcessor):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    rtsp_url = (
-        "rtsp://vtviewer:Vtech123!@192.168.1.120/cam/realmonitor?channel=1&subtype=2"
-    )
+    rtsp_url = "rtsp//..."
     processor = StreamProcessor(rtsp_url, clips_length=2)
 
     try:

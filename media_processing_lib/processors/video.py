@@ -6,6 +6,7 @@ from collections import deque
 from queue import Queue
 import threading
 import logging
+from typing import Optional
 from media_processing_lib.processors.base import IMediaProcessor
 from media_processing_lib.data.schemas import Clip
 
@@ -13,11 +14,39 @@ logger = logging.getLogger(__name__)
 
 
 class VideoProcessor(IMediaProcessor):
-    """
-    The clips_length here are in seconds
+    """Video file processor for creating action recognition clips.
+
+    Processes local video files by extracting frames sequentially and creating
+    non-overlapping video clips. Each clip contains a specified duration of frames
+    stored as individual image files on disk for memory efficiency.
+
+    The processor divides videos into segments:
+    Video → Frame Extraction → Clip Creation → Queue Output
+
+    Attributes:
+        media_link: Path to the video file to process
+        clips_length: Duration of each clip in seconds
+        fps: Video frame rate (frames per second)
+        total_frames: Total number of frames in the video
+
+    Example:
+        ```python
+        processor = VideoProcessor("./video.mp4", clips_length=2)
+        processor.configure()
+        processor.start(clips_queue)
+        ```
     """
 
-    def __init__(self, media_link: str, clips_length: int):
+    def __init__(self, media_link: str, clips_length: int) -> None:
+        """Initialize video processor.
+
+        Args:
+            media_link: Path to local video file
+            clips_length: Duration of each clip in seconds
+
+        Raises:
+            ValueError: If video file cannot be opened or is invalid
+        """
         self.media_link = media_link
         self.cap = cv2.VideoCapture(media_link)
         self.clips_length = clips_length
@@ -25,36 +54,51 @@ class VideoProcessor(IMediaProcessor):
         if not self.cap.isOpened():
             raise ValueError(f"Error opening video: {media_link}")
 
-        self.fps = None
-        self.video_width: int = None
-        self.video_height: int = None
-        self.clip_length_in_frames: int = None
-        self.total_frames: int = None
+        self.fps: Optional[float] = None
+        self.video_width: Optional[int] = None
+        self.video_height: Optional[int] = None
+        self.clip_length_in_frames: Optional[int] = None
+        self.total_frames: Optional[int] = None
 
         self.clip_container = None
-        self.temp_dir = None
-        self.target_dir = None
+        self.temp_dir: Optional[str] = None
+        self.target_dir: Optional[str] = None
         self.frame_counter = 0
         self.num_clips = 0
 
-    def init_frame_repo(self):
+    def init_frame_repo(self) -> None:
+        """Initialize temporary directory for frame storage.
+
+        Creates a unique temporary directory for storing individual frame files
+        extracted from the video. Uses video filename for organization.
+        """
         self.temp_dir = tempfile.mkdtemp(prefix="video_frames_")
         video_name = osp.basename(osp.splitext(self.media_link)[0])
         self.target_dir = osp.join(self.temp_dir, video_name)
         os.makedirs(self.target_dir, exist_ok=True)
         logger.info(f"Initialized frame repository: {self.target_dir}")
 
-    def configure(self):
+    def configure(self) -> None:
+        """Configure video processor settings and validate parameters.
+
+        Extracts video properties, calculates clip parameters, and initializes
+        storage. Handles edge cases where clip length exceeds video duration.
+
+        Raises:
+            ValueError: If video properties cannot be determined
+        """
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
         self.video_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.video_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        logger.info(f"Video properties: {self.total_frames} frames at {self.fps} FPS")
+
         self.clip_length_in_frames = int(self.fps * self.clips_length)
 
         if self.clip_length_in_frames > self.total_frames:
             logger.warning(
-                f"Clip length ({self.clip_length_in_frames}) > total frames ({self.total_frames}). Using total video size for clip length ..."
+                f"Clip length ({self.clip_length_in_frames}) > total frames ({self.total_frames}). Using total video size for clip length"
             )
             self.clip_length_in_frames = self.total_frames
 
@@ -62,15 +106,31 @@ class VideoProcessor(IMediaProcessor):
         self.clip_container = deque(maxlen=self.clip_length_in_frames)
         self.init_frame_repo()
 
-    def cleanup(self):
-        """Clean up temporary directory when done"""
+    def cleanup(self) -> None:
+        """Clean up temporary directory and frame files.
+
+        Removes all temporary frame files and directories created during
+        video processing. Should be called after processing is complete.
+        """
         if self.temp_dir and os.path.exists(self.temp_dir):
             import shutil
 
             shutil.rmtree(self.temp_dir)
             logger.info(f"Cleaned up temp directory: {self.temp_dir}")
 
-    def start(self, clips_queue: Queue):
+    def start(self, clips_queue: Queue) -> None:
+        """Start video processing and generate clips.
+
+        Processes the video file sequentially, creating non-overlapping clips
+        by reading frames, saving them to disk, and creating Clip objects.
+        Each clip contains exactly clip_length_in_frames frames.
+
+        Args:
+            clips_queue: Queue to receive generated Clip objects
+
+        Raises:
+            RuntimeError: If video processing fails
+        """
         try:
             frame_tmpl = osp.join(self.target_dir, "img_{:06d}.jpg")
             clip_number = 0

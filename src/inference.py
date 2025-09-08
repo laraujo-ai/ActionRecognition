@@ -1,12 +1,41 @@
 import numpy as np
 import logging
 import gc
+from queue import Queue
+from typing import Any
 
 
 logger = logging.getLogger(__name__)
 
 
-def inference_thread(pose_estimator, action_model, results_queue, clips_queue) -> None:
+def inference_thread(
+    pose_estimator: Any, action_model: Any, results_queue: Queue, clips_queue: Queue
+) -> None:
+    """Process video clips through pose estimation and action recognition pipeline.
+
+    Continuously processes clips from the clips_queue by:
+    1. Extracting pose keypoints from video frames using YOLO pose estimator
+    2. Running action recognition on pose data using PoseC3D model
+    3. Publishing results to results_queue
+
+    This function is designed to run in a separate thread and handles its own
+    error recovery and memory management.
+
+    Args:
+        pose_estimator: YOLO pose estimation model that processes frame paths
+        action_model: PoseC3D action recognition model that processes pose data
+        results_queue: Queue to publish inference results to
+        clips_queue: Queue to consume video clips from
+
+    Returns:
+        None: Function runs until poison pill (None) is received or critical error occurs
+
+    Note:
+        - Thread-safe function designed for concurrent execution
+        - Performs aggressive memory cleanup to prevent leaks
+        - Validates input data and handles missing files gracefully
+        - Uses timeout on queue operations to prevent indefinite blocking
+    """
 
     while True:
         try:
