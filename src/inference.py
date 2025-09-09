@@ -4,7 +4,6 @@ import gc
 from queue import Queue
 from typing import Any
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -45,21 +44,20 @@ def inference_thread(
 
             if clip.clip_size <= 0:
                 continue
-
-            pose_results = pose_estimator.inference_on_video(clip.frame_paths)
+            
+            pose_results = pose_estimator.inference_on_video(clip.frame_paths)             
             h, w = clip.frame_shape
-
+            
+            if len(pose_results) == 0:
+                continue           
+            
             data = {"pose_results": pose_results, "img_shape": (h, w)}
+
             inference_results = action_model.inference(data)
-
-            logger.info(f"Clip processed: {inference_results}")
-
             assert isinstance(inference_results, str) or isinstance(
                 inference_results, np.ndarray
             )
-
             results_queue.put(inference_results)
-            logger.info(f"Clip processed: {inference_results}")
 
             # Memory cleanup
             del clip, pose_results, data

@@ -1,4 +1,2 @@
-ultralytics
 opencv-python
-onnxruntime
 pydantic

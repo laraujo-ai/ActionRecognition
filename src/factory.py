@@ -90,7 +90,7 @@ def create_media_processor(args: argparse.Namespace):
     """
     if is_rtsp_stream(args.media_link):
         return media_prov.get_stream_processor(
-            args.media_link, args.stream_codec, args.clips_length
+            args.media_link, args.stream_codec, args.clips_length, args.fps
         )
     else:
         return media_prov.get_video_processor(args.media_link, args.clips_length)

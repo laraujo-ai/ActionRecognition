@@ -11,7 +11,7 @@ import os.path as osp
 from queue import Queue
 from collections import deque
 from threading import Thread, Event
-from typing import Optional, Dict, Any
+from typing import Optional, Deque
 
 gi.require_version("Gst", "1.0")
 from gi.repository import Gst, GLib
@@ -47,11 +47,12 @@ class StreamProcessor(IMediaProcessor):
         ```
     """
 
-    def __init__(self, rtsp_url: str, clips_length: int) -> None:
+    def __init__(self, rtsp_url: str, stream_codec : str ,clips_length: int, fps:int) -> None:
         """Initialize RTSP stream processor.
 
         Args:
             rtsp_url: RTSP stream URL to connect to
+            stream_codec : The codec in which the stream is embedded
             clips_length: Duration of each video clip in seconds
 
         Raises:
@@ -59,8 +60,9 @@ class StreamProcessor(IMediaProcessor):
         """
         self.rtsp_url = rtsp_url
         self.clips_length = clips_length
+        self.stream_codec = stream_codec
+        self.fps = fps
 
-        self.fps = None
         self.video_width = None
         self.video_height = None
         self.clip_length_in_frames = None
@@ -76,7 +78,10 @@ class StreamProcessor(IMediaProcessor):
         self.main_loop = None
         self.stop_event = Event()
 
-        self.clip_container = None
+        self.width = None
+        self.height = None
+
+        self.clip_container: Optional[Deque[str]] = None
 
     def _create_pipeline(self) -> None:
         """Create GStreamer pipeline with NVIDIA hardware decoding.
@@ -92,16 +97,23 @@ class StreamProcessor(IMediaProcessor):
             RuntimeError: If pipeline creation or element linking fails
         """
 
-        # Create pipeline string for RTSP with NVIDIA decoding. nvv4l2decoder -> should be the decoder for jetson.
+        # Create pipeline string for RTSP with NVIDIA decoding. The hardware decoder gives us back a NV12 format frame. 
+        # Unfortunately the VIC(Vision Image Compositor) software, which is what the nvvideoconvert is trying to use to convert our frame
+        # to RGB does not suport this convertion operation. Therefore we include a basic videoconvert after the nvvideoconvert.
+        # Now the nvvideoconvert just takes the NV12 buffer and transfers it to the CPU memory and the videoconvert gets us the RGB frame.
+        
         pipeline_str = f"""
-            rtspsrc location={self.rtsp_url} latency=0 ! 
-            {self.DEPAY_MAP[self.stream_codec]} ! 
-            {self.PARSER_MAP[self.stream_codec]} ! 
-            nvv4l2decoder enable-max-performance=1 ! 
-            nvvideoconvert ! 
-            video/x-raw,format=BGR ! 
-            appsink name=sink emit-signals=true sync=false max-buffers=2 drop=true
-            """
+        rtspsrc location="{self.rtsp_url}" latency=0 protocol=tcp !
+        {self.DEPAY_MAP[self.stream_codec]} !
+        {self.PARSER_MAP[self.stream_codec]} !
+        nvv4l2decoder enable-max-performance=1 !
+        nvvideoconvert !
+        videorate !
+        video/x-raw,width=640,height=640,framerate={self.fps}/1 !
+        videoconvert !
+        video/x-raw,format=BGR !
+        appsink name=sink emit-signals=true sync=false max-buffers=2 drop=true
+        """
 
         logger.info(f"Creating pipeline: {pipeline_str}")
         self.pipeline = Gst.parse_launch(pipeline_str)
@@ -119,9 +131,47 @@ class StreamProcessor(IMediaProcessor):
 
         # Connect callback
         self.app_sink.connect("new-sample", self._on_new_sample)
+        
+        # Add bus message handler for error monitoring
+        bus = self.pipeline.get_bus()
+        bus.add_signal_watch()
+        bus.connect("message::error", self._on_pipeline_error)
+        bus.connect("message::warning", self._on_pipeline_warning)
+        bus.connect("message::info", self._on_pipeline_info)
+
+    def _cleanup_pipeline(self):
+        """Clean up GStreamer pipeline"""
+        if self.pipeline:
+            bus = self.pipeline.get_bus()
+            if bus:
+                bus.remove_signal_watch()
+            
+            self.pipeline.set_state(Gst.State.NULL)
+            self.pipeline = None    
+
+        if self.main_loop:
+            self.main_loop.quit()
+            self.main_loop = None
+
+    def _on_pipeline_error(self, bus, msg):
+        """Handle pipeline error messages"""
+        err, debug = msg.parse_error()
+        logger.error(f"Pipeline error: {err} - Debug: {debug}")
+        self.stop_event.set()
+        
+    def _on_pipeline_warning(self, bus, msg):
+        """Handle pipeline warning messages"""
+        warn, debug = msg.parse_warning()
+        logger.warning(f"Pipeline warning: {warn} - Debug: {debug}")
+        
+    def _on_pipeline_info(self, bus, msg):
+        """Handle pipeline info messages"""
+        info, debug = msg.parse_info()
+        logger.info(f"Pipeline info: {info} - Debug: {debug}")
 
     def _on_new_sample(self, app_sink):
         """Callback for new frame from appsink"""
+        sample = None
         try:
             sample = app_sink.emit("pull-sample")
             if not sample:
@@ -132,8 +182,8 @@ class StreamProcessor(IMediaProcessor):
 
             # Get frame dimensions
             structure = caps.get_structure(0)
-            width = structure.get_int("width")[1]
-            height = structure.get_int("height")[1]
+            self.width = structure.get_int("width")[1]
+            self.height = structure.get_int("height")[1]
 
             # Extract frame data
             success, map_info = buffer.map(Gst.MapFlags.READ)
@@ -141,20 +191,22 @@ class StreamProcessor(IMediaProcessor):
                 logger.error("Failed to map buffer")
                 return Gst.FlowReturn.OK
 
-            # Convert buffer data to numpy array (should be good to go since we have the nvvideoconvert before the appsink)
-            frame_data = np.ndarray(
-                shape=(height, width, 3), buffer=map_info.data, dtype=np.uint8
-            )
-            frame = np.copy(frame_data)
-            buffer.unmap(map_info)
-
-            self._process_frame(frame)
-
+            try:
+                # Convert buffer data to numpy array
+                frame_data = np.ndarray(
+                    shape=(self.height, self.width, 3), buffer=map_info.data, dtype=np.uint8
+                )
+                frame = np.copy(frame_data)
+                self._process_frame(frame)
+            finally:
+                buffer.unmap(map_info)
             return Gst.FlowReturn.OK
-
         except Exception as e:
             logger.error(f"Error processing frame: {e}")
             return Gst.FlowReturn.ERROR
+        finally:
+            if sample is not None:
+                del sample
 
     def _process_frame(self, frame):
         """Process individual frame - save to disk and manage clips"""
@@ -162,6 +214,9 @@ class StreamProcessor(IMediaProcessor):
             return
 
         # Save frame to disk
+        if not self.target_dir:
+            logger.error("Target directory not initialized")
+            return
         frame_tmpl = osp.join(self.target_dir, "img_{:06d}.jpg")
         frame_path = frame_tmpl.format(self.frame_counter + 1)
 
@@ -170,20 +225,23 @@ class StreamProcessor(IMediaProcessor):
             logger.error(f"Failed to save frame to {frame_path}")
             return
 
-        self.clip_container.append(frame_path)
+        if self.clip_container is not None:
+            self.clip_container.append(frame_path)
         self.frame_counter += 1
 
         # Create clip when buffer is full
-        if len(self.clip_container) == self.clip_length_in_frames:
+        if self.clip_container is not None and len(self.clip_container) == self.clip_length_in_frames:
             current_clip_frames = list(self.clip_container)
             clip = Clip(
                 frame_paths=current_clip_frames,
                 clip_size=len(current_clip_frames),
                 temp_dir=self.temp_dir,
+                frame_shape=(self.height, self.width)
             )
             self.clips_queue.put(clip)
             logger.debug(f"Created clip with {len(current_clip_frames)} frames")
-            self.clip_container.clear()
+            if self.clip_container is not None:
+                self.clip_container.clear()
 
     def init_frame_repo(self) -> None:
         """Initialize temporary directory for frame storage.
@@ -201,9 +259,9 @@ class StreamProcessor(IMediaProcessor):
         """Configure stream processor settings and initialize resources.
 
         Sets up processing parameters, creates temporary storage, and builds
-        the GStreamer pipeline. Uses default FPS estimation for live streams.
+        the GStreamer pipeline.
         """
-        self.fps = 30
+
         self.clip_length_in_frames = int(self.fps * self.clips_length)
         self.clip_container = deque(maxlen=self.clip_length_in_frames)
 
@@ -234,7 +292,6 @@ class StreamProcessor(IMediaProcessor):
             self.main_loop = GLib.MainLoop()
             loop_thread = Thread(target=self.main_loop.run, daemon=True)
             loop_thread.start()
-
             self.stop_event.wait()
 
         except Exception as e:
@@ -249,16 +306,6 @@ class StreamProcessor(IMediaProcessor):
         """
         logger.info("Stopping stream processor")
         self.stop_event.set()
-
-    def _cleanup_pipeline(self):
-        """Clean up GStreamer pipeline"""
-        if self.pipeline:
-            self.pipeline.set_state(Gst.State.NULL)
-            self.pipeline = None
-
-        if self.main_loop:
-            self.main_loop.quit()
-            self.main_loop = None
 
     def cleanup(self) -> None:
         """Clean up temporary directory and frame files.
@@ -277,7 +324,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     rtsp_url = "rtsp//..."
-    processor = StreamProcessor(rtsp_url, clips_length=2)
+    processor = StreamProcessor(rtsp_url, "h264", clips_length=2)
 
     try:
         processor.configure()

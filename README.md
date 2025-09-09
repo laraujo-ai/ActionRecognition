@@ -120,7 +120,6 @@ Located in `posec3d_lib/configs/posec3d_inference.py`:
 
 ### Core Requirements
 ```
-ultralytics      # YOLOv8 models
 opencv-python    # Video processing
 onnxruntime      # ML inference
 pydantic         # Data validation
@@ -133,7 +132,7 @@ pydantic         # Data validation
 ## Model Files
 
 ### Pose Estimation
-- `yolov8n-pose.pt`: Lightweight pose model (8MB)
+- `yolov8n-pose.onnx`: Lightweight pose model (12MB)
 - Supports various YOLOv8 sizes (n/s/m/l/x)
 
 ### Action Recognition

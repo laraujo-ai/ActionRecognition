@@ -3,31 +3,48 @@ import numpy as np
 from typing import Optional, Sequence, Tuple
 
 
-DRAW_CONFIDENCE_THRESHOLD = 0.3
+DRAW_CONFIDENCE_THRESHOLD = 0.3  # Minimum confidence to draw keypoints and connections
+# COCO-format skeleton connections for 17 keypoints
+# Defines which keypoints should be connected to form the human skeleton
 COCO_CONNECTIONS = [
-    (0, 1),
-    (0, 2),
-    (1, 3),
-    (2, 4),
-    (5, 6),
-    (5, 7),
-    (7, 9),
-    (6, 8),
-    (8, 10),
-    (5, 11),
-    (6, 12),
-    (11, 12),
-    (11, 13),
-    (13, 15),
-    (12, 14),
-    (14, 16),
+    (0, 1),   # nose -> left_eye
+    (0, 2),   # nose -> right_eye
+    (1, 3),   # left_eye -> left_ear
+    (2, 4),   # right_eye -> right_ear
+    (5, 6),   # left_shoulder -> right_shoulder
+    (5, 7),   # left_shoulder -> left_elbow
+    (7, 9),   # left_elbow -> left_wrist
+    (6, 8),   # right_shoulder -> right_elbow
+    (8, 10),  # right_elbow -> right_wrist
+    (5, 11),  # left_shoulder -> left_hip
+    (6, 12),  # right_shoulder -> right_hip
+    (11, 12), # left_hip -> right_hip
+    (11, 13), # left_hip -> left_knee
+    (13, 15), # left_knee -> left_ankle
+    (12, 14), # right_hip -> right_knee
+    (14, 16), # right_knee -> right_ankle
 ]
-DEFAULT_ACTION_RECOGNITION_SPOT = (20, 30)
+DEFAULT_ACTION_RECOGNITION_SPOT = (20, 30)  # Default position for action text overlay
 
 
 def draw_on_video(
     frames: Sequence[np.ndarray], pose_results: list, recognition_result: str
 ) -> Sequence[np.ndarray]:
+    """Draw pose skeletons and action recognition results on video frames.
+    
+    Processes a sequence of video frames by overlaying pose estimation results
+    (keypoints, skeleton connections, bounding boxes) and action recognition
+    text. This is the main entry point for video visualization.
+    
+    Args:
+        frames: Sequence of video frames as numpy arrays (H, W, 3)
+        pose_results: List of pose detection results per frame, where each
+            result contains keypoints, scores, and bounding box information
+        recognition_result: Predicted action class name to display as text
+        
+    Returns:
+        Sequence[np.ndarray]: Processed frames with pose and action overlays
+    """
     frames_ready = []
     for frame, pose_result in zip(frames, pose_results):
         draw_skeleton(frame, pose_result, COCO_CONNECTIONS)
@@ -38,6 +55,15 @@ def draw_on_video(
 
 
 def draw_recognition_result(frame: np.ndarray, recognition_result: str) -> None:
+    """Draw action recognition result text on a video frame.
+    
+    Overlays the predicted action class name as text in the upper-left corner
+    of the frame using OpenCV text rendering with predefined styling.
+    
+    Args:
+        frame: Input video frame to draw on (modified in-place)
+        recognition_result: Action class name to display as text overlay
+    """
     cv2.putText(
         frame,
         recognition_result,
@@ -53,7 +79,21 @@ def draw_recognition_result(frame: np.ndarray, recognition_result: str) -> None:
 def draw_skeleton(
     img: np.ndarray, pose_result: dict, connections: Sequence[Tuple[int, int]]
 ) -> None:
-    """Draw skeleton on image."""
+    """Draw pose skeleton with keypoints, connections, and bounding boxes on image.
+    
+    Renders a complete pose visualization including:
+    1. Keypoint circles (red) for joints above confidence threshold
+    2. Skeleton connections (green lines) between valid keypoint pairs
+    3. Bounding boxes (blue rectangles) around detected persons
+    
+    Args:
+        img: Input image to draw on (modified in-place)
+        pose_result: Dictionary containing pose detection results:
+            - keypoints: Array of shape (num_persons, 17, 2) with (x,y) coordinates
+            - keypoint_scores: Array of shape (num_persons, 17) with confidence scores
+            - bboxes: Array of shape (num_persons, 4) with bounding box coordinates
+        connections: Sequence of (start_idx, end_idx) tuples defining skeleton structure
+    """
 
     keypoints = pose_result["keypoints"]
     scores = pose_result["keypoint_scores"]

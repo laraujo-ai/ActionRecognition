@@ -27,7 +27,7 @@ def get_video_processor(media_link: str, clip_length: int) -> IMediaProcessor:
 
 
 def get_stream_processor(
-    media_link: str, stream_codec: str, clip_length: int
+    media_link: str, stream_codec: str, clip_length: int, fps :int
 ) -> IMediaProcessor:
     """Create a stream processor for RTSP/live video streams.
 
@@ -38,7 +38,7 @@ def get_stream_processor(
         media_link: RTSP stream URL (e.g., "rtsp://192.168.1.100:554/stream")
         stream_codec: Video codec for stream processing (e.g., "h264", "h265")
         clip_length: Duration of each clip in seconds
-
+        fps : The desired rate for clip recording
     Returns:
         IMediaProcessor: Configured stream processor instance
 
@@ -53,4 +53,4 @@ def get_stream_processor(
         processor.start(clips_queue)
         ```
     """
-    return StreamProcessor(media_link, stream_codec, clip_length)
+    return StreamProcessor(media_link, stream_codec, clip_length, fps)

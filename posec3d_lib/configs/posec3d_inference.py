@@ -35,5 +35,5 @@ LABEL_MAP_PATH = "posec3d_lib/data/static/label_map_ntu60.txt"
 ACTION_MODEL_PATH = "posec3d_lib/weights/posec3d.onnx"
 
 # Pose estimator info
-YOLO_MODEL = "yolov8n-pose.pt"
+YOLO_MODEL = "posec3d_lib/weights/yolov8n-pose.onnx"
 KEYPOINTS_CONF_THRESHOLD = 0.35

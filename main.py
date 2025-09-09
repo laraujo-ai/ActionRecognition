@@ -37,6 +37,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--clips_length", type=int, default=2, help="Length of video clips in seconds"
     )
+    parser.add_argument(
+        "--fps", type=int, default=30, help="The desired Fps for inference"
+    )
     return parser.parse_args()
 
 
