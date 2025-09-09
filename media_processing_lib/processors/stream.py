@@ -290,7 +290,7 @@ if __name__ == "__main__":
             try:
                 clip = clips_queue.get(timeout=5)
                 logger.info(f"Got clip with {clip.clip_size} frames")
-            except:
+            except Exception as e:
                 logger.info("No clips received")
                 break
 
