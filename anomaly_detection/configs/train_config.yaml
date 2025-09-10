@@ -1,0 +1,55 @@
+dataset:
+  base_path: "YOUR DATASET ROOT DIR"
+  normal_categories:
+    - "cat1"
+    - "cat2"
+    - "cat3"
+
+  anomaly_categories:
+    - "cat1"
+    - "cat2"
+  
+  limits:
+    train_normal: 475      
+    val_normal: 20        
+    val_anomalous: 20     
+    test_normal: 10       
+    test_anomalous: 10    
+
+model:
+  config_path: "../posec3d_lib/configs/posec3d_feature_extractor.py"
+  feature_normalization: true  # Normalize feature vectors to unit length
+  
+  pca:
+    enable: true
+    max_components: 64
+    min_samples_ratio: 0.8  # Apply PCA if dimensions > ratio * samples
+
+training:
+  validation_percentile: 95  # Percentile for threshold on normal validation samples
+  
+  # Covariance estimation
+  covariance_estimator: "ledoit_wolf"  # Good for smaller datasets.
+  fallback_threshold_std_multiplier: 3.0
+
+# Output Configuration
+output:
+  save_model: true
+  model_save_path: "./trained_models/mahalanobis_model.pkl"
+  save_results: true
+  results_save_path: "./results/training_results.json"
+  
+  verbose: true
+  progress_bars: true
+
+evaluation:
+  metrics:
+    - "accuracy"
+    - "precision"
+    - "recall"
+    - "f1"
+    - "auroc"
+    - "average_precision"
+  
+  save_confusion_matrix: true
+  save_scores: true  

@@ -4,7 +4,7 @@ from queue import Queue, Empty
 from threading import Thread
 
 from src.inference import inference_thread
-from src.factory import create_models, create_media_processor
+from src.factory import create_models, create_media_processor, create_anomaly_detector
 
 
 def parse_args() -> argparse.Namespace:
@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     Returns:
         argparse.Namespace: Parsed command line arguments containing:
             - media_link: Path to video file or RTSP stream URL
-            - model_type: Type of model ('classifier' or 'feature_extractor')
+            - model_type: Type of model ('classifier' or 'anomaly_detector')
             - stream_codec: Codec for stream processing
             - clips_length: Length of video clips in seconds
     """
@@ -28,8 +28,13 @@ def parse_args() -> argparse.Namespace:
         "--model_type",
         type=str,
         required=True,
-        choices=["classifier", "feature_extractor"],
+        choices=["classifier", "anomaly_detector"],
         help="Type of model to use",
+    )
+    parser.add_argument(
+        "--pretrained_path",
+        type=str,
+        help="Path to your pre-trained mahalanobis anomaly detection model",
     )
     parser.add_argument(
         "--stream_codec", type=str, default="h264", help="Codec for stream processing"
@@ -68,9 +73,13 @@ def main(args: argparse.Namespace) -> None:
 
     try:
         pose_estimator, model = create_models(args, logger)
+        anomaly_detector = None
         if not pose_estimator or not model:
             logger.error("Failed to load required models")
             return
+
+        if args.model_type == "anomaly_detector":
+            anomaly_detector = create_anomaly_detector(args.pretrained_path)
 
         media_processor = create_media_processor(args)
         media_processor.configure()
@@ -80,7 +89,7 @@ def main(args: argparse.Namespace) -> None:
         )
         model_thread = Thread(
             target=inference_thread,
-            args=(pose_estimator, model, results_queue, clips_queue),
+            args=(pose_estimator, model, anomaly_detector, results_queue, clips_queue),
             daemon=True,
         )
 
@@ -91,7 +100,7 @@ def main(args: argparse.Namespace) -> None:
         while True:
             try:
                 result = results_queue.get(timeout=5)
-                logger.info(f"Action detected: {result}")
+                logger.info(f"Output : {result}")
             except Empty:
                 if not video_thread.is_alive() and not model_thread.is_alive():
                     logger.info("All threads finished")

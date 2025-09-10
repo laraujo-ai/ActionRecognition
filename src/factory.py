@@ -3,6 +3,7 @@ import logging
 
 import media_processing_lib.providers as media_prov
 import posec3d_lib.providers as posec3d_prov
+import anomaly_detection.providers as anomaly_prov
 from src.utils import is_rtsp_stream
 
 
@@ -61,7 +62,7 @@ def create_models(args: argparse.Namespace, logger: logging.Logger) -> tuple:
             model = create_action_recognizer(model_config)
             return pose_estimator, model
 
-        elif args.model_type == "feature_extractor":
+        elif args.model_type == "anomaly_detector":
             logger.info("Loading PoseC3D Feature Extractor")
             model_config = posec3d_prov.get_config(
                 "posec3d_lib/configs/posec3d_feature_extractor.py"
@@ -94,3 +95,8 @@ def create_media_processor(args: argparse.Namespace):
         )
     else:
         return media_prov.get_video_processor(args.media_link, args.clips_length)
+
+
+def create_anomaly_detector(pretrained_path: str):
+
+    return anomaly_prov.get_trained_mahalanobis(pretrained_path)

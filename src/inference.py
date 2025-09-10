@@ -3,12 +3,32 @@ import logging
 import gc
 from queue import Queue
 from typing import Any
+from anomaly_detection.utils.functions import compute_mahalanobis_scores
 
 logger = logging.getLogger(__name__)
 
 
+def handle_anomaly_inference(model, input_: np.ndarray):
+
+    input_scaled = model.scaler.transform(input_)
+    input_proc = (
+        model.pca.transform(input_scaled) if model.pca is not None else input_scaled
+    )
+
+    scores = compute_mahalanobis_scores(input_proc, model.mean, model.inv_covariance)
+    predictions = (scores > model.threshold).astype(int)
+
+    class_map = {0: "Not an Anomaly", 1: "Anomaly Detected"}
+
+    return class_map[predictions[0]]  # Only one clip per time
+
+
 def inference_thread(
-    pose_estimator: Any, action_model: Any, results_queue: Queue, clips_queue: Queue
+    pose_estimator: Any,
+    action_model: Any,
+    anomaly_detector: Any,
+    results_queue: Queue,
+    clips_queue: Queue,
 ) -> None:
     """Process video clips through pose estimation and action recognition pipeline.
 
@@ -44,19 +64,22 @@ def inference_thread(
 
             if clip.clip_size <= 0:
                 continue
-            
-            pose_results = pose_estimator.inference_on_video(clip.frame_paths)             
+
+            pose_results = pose_estimator.inference_on_video(clip.frame_paths)
             h, w = clip.frame_shape
-            
+
             if len(pose_results) == 0:
-                continue           
-            
+                continue
+
             data = {"pose_results": pose_results, "img_shape": (h, w)}
 
             inference_results = action_model.inference(data)
             assert isinstance(inference_results, str) or isinstance(
                 inference_results, np.ndarray
             )
+            if anomaly_detector:
+                inference_results = handle_anomaly_inference(model, inference_results)
+
             results_queue.put(inference_results)
 
             # Memory cleanup
