@@ -7,7 +7,7 @@ import tqdm
 
 import posec3d_lib.providers as prov
 from posec3d_lib.utils.video_recording import extract_frames
-from anomaly_detection.schemas import DatasetConfig
+from anomaly_detection.data.schemas import DatasetConfig
 
 
 class VideoDataLoader:

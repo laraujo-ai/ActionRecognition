@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-import pickle
+import json
 import numpy as np
 from typing import List, Dict, Any, Optional
 from sklearn.decomposition import PCA
@@ -81,30 +81,93 @@ class TrainedModel:
     pca_components: Optional[int]
 
     def save(self, filepath: str) -> None:
-        """Save trained model to disk using pickle serialization.
+        """Save trained model using JSON + NumPy format.
 
-        Creates parent directories if they don't exist and serializes the complete
-        model state for later loading and inference.
+        Creates parent directories if they don't exist and saves the model
+        components as separate files for better portability and debugging.
 
         Args:
-            filepath: Path where to save the model file
+            filepath: Base path where to save the model files (without extension)
         """
-        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-        with open(filepath, "wb") as f:
-            pickle.dump(self, f)
+        base_path = Path(filepath).with_suffix("")
+        base_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Save sklearn objects as separate pickle files
+        import pickle
+
+        scaler_path = f"{base_path}_scaler.pkl"
+        with open(scaler_path, "wb") as f:
+            pickle.dump(self.scaler, f)
+
+        pca_path = None
+        if self.pca is not None:
+            pca_path = f"{base_path}_pca.pkl"
+            with open(pca_path, "wb") as f:
+                pickle.dump(self.pca, f)
+
+        # Save numpy arrays
+        np.save(f"{base_path}_mean.npy", self.mean)
+        np.save(f"{base_path}_covariance.npy", self.covariance)
+        np.save(f"{base_path}_inv_covariance.npy", self.inv_covariance)
+
+        # Save metadata as JSON
+        metadata = {
+            "threshold": float(self.threshold),
+            "feature_dim": int(self.feature_dim),
+            "pca_components": int(self.pca_components) if self.pca_components else None,
+            "has_pca": self.pca is not None,
+            "scaler_path": scaler_path,
+            "pca_path": pca_path,
+            "mean_path": f"{base_path}_mean.npy",
+            "covariance_path": f"{base_path}_covariance.npy",
+            "inv_covariance_path": f"{base_path}_inv_covariance.npy",
+        }
+
+        with open(f"{base_path}.json", "w") as f:
+            json.dump(metadata, f, indent=2)
 
     @classmethod
     def load(cls, filepath: str) -> "TrainedModel":
-        """Load trained model from disk.
+        """Load trained model from JSON + NumPy format.
 
         Args:
-            filepath: Path to the saved model file
+            filepath: Base path to the saved model files (without extension)
 
         Returns:
             TrainedModel: Loaded model ready for inference
         """
-        with open(filepath, "rb") as f:
-            return pickle.load(f)
+        base_path = Path(filepath).with_suffix("")
+
+        # Load metadata
+        with open(f"{base_path}.json", "r") as f:
+            metadata = json.load(f)
+
+        # Load sklearn objects
+        import pickle
+
+        with open(metadata["scaler_path"], "rb") as f:
+            scaler = pickle.load(f)
+
+        pca = None
+        if metadata["has_pca"]:
+            with open(metadata["pca_path"], "rb") as f:
+                pca = pickle.load(f)
+
+        # Load numpy arrays
+        mean = np.load(metadata["mean_path"])
+        covariance = np.load(metadata["covariance_path"])
+        inv_covariance = np.load(metadata["inv_covariance_path"])
+
+        return cls(
+            scaler=scaler,
+            pca=pca,
+            mean=mean,
+            covariance=covariance,
+            inv_covariance=inv_covariance,
+            threshold=metadata["threshold"],
+            feature_dim=metadata["feature_dim"],
+            pca_components=metadata["pca_components"],
+        )
 
     def get_model_info(self) -> Dict[str, Any]:
         """Get model metadata and configuration information.

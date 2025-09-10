@@ -5,7 +5,7 @@ from sklearn.covariance import LedoitWolf, EmpiricalCovariance
 from sklearn.decomposition import PCA
 from sklearn import metrics
 
-from anomaly_detection.schemas import TrainingConfig, TrainedModel
+from anomaly_detection.data.schemas import TrainingConfig, TrainedModel
 from anomaly_detection.utils.functions import compute_mahalanobis_scores
 
 
