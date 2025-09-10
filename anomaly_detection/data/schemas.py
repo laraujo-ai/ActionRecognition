@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-import pickle
+import json
 import numpy as np
 from typing import List, Tuple, Dict, Any, Optional
 from sklearn.decomposition import PCA
@@ -81,30 +81,76 @@ class TrainedModel:
     pca_components: Optional[int]
 
     def save(self, filepath: str) -> None:
-        """Save trained model to disk using pickle serialization.
+        """Save trained model to disk using JSON + NumPy format.
 
-        Creates parent directories if they don't exist and serializes the complete
-        model state for later loading and inference.
+        Creates parent directories if they don't exist and saves the model
+        using a robust format that's immune to pickle compatibility issues.
 
         Args:
-            filepath: Path where to save the model file
+            filepath: Path where to save the model file (will save as .npz + .json)
         """
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-        with open(filepath, "wb") as f:
-            pickle.dump(self, f)
+        base_path = Path(filepath).with_suffix('')
+        
+        # Save NumPy arrays separately (immune to version issues)
+        arrays_path = f"{base_path}.npz"
+        np.savez_compressed(
+            arrays_path,
+            mean=self.mean,
+            covariance=self.covariance,
+            inv_covariance=self.inv_covariance
+        )
+        import joblib
+        models_path = f"{base_path}_models.joblib"
+        joblib.dump({
+            'scaler': self.scaler,
+            'pca': self.pca
+        }, models_path)
+        
+        metadata_path = f"{base_path}.json"
+        metadata = {
+            'threshold': float(self.threshold),
+            'feature_dim': int(self.feature_dim),
+            'pca_components': self.pca_components
+        }
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
 
     @classmethod
     def load(cls, filepath: str) -> "TrainedModel":
-        """Load trained model from disk.
+        """Load trained model from disk using robust format.
 
         Args:
-            filepath: Path to the saved model file
+            filepath: Path to the saved model file (without extension)
 
         Returns:
             TrainedModel: Loaded model ready for inference
         """
-        with open(filepath, "rb") as f:
-            return pickle.load(f)
+        import json
+        import joblib
+        
+        base_path = Path(filepath).with_suffix('')
+        
+        arrays_path = f"{base_path}.npz"
+        arrays = np.load(arrays_path)        
+        models_path = f"{base_path}_models.joblib"
+        models = joblib.load(models_path)
+        
+        metadata_path = f"{base_path}.json"
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+        
+        # Reconstruct the model
+        return cls(
+            scaler=models['scaler'],
+            pca=models['pca'],
+            mean=arrays['mean'],
+            covariance=arrays['covariance'],
+            inv_covariance=arrays['inv_covariance'],
+            threshold=metadata['threshold'],
+            feature_dim=metadata['feature_dim'],
+            pca_components=metadata['pca_components']
+        )
 
     def get_model_info(self) -> Dict[str, Any]:
         """Get model metadata and configuration information.

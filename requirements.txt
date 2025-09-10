@@ -1,7 +1,6 @@
 opencv-python
 pydantic
-numpy
 scikit-learn
 PyYAML
 tqdm
-onnxruntime
+joblib

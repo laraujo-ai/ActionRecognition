@@ -107,10 +107,10 @@ def main(args: argparse.Namespace) -> None:
                     break
 
     except KeyboardInterrupt:
-        logger.info("Interrupted by user")
+        logger.exception("Interrupted by user")
         clips_queue.put(None)
     except Exception as e:
-        logger.error(f"Application error: {e}")
+        logger.exception("Application error")
     finally:
         if "media_processor" in locals() and hasattr(media_processor, "cleanup"):
             media_processor.cleanup()
