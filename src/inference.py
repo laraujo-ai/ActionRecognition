@@ -28,6 +28,7 @@ def inference_thread(
     Args:
         pose_estimator: YOLO pose estimation model that processes frame paths
         action_model: PoseC3D action recognition model that processes pose data
+        anomaly_detector : A Mahalanobis Anomaly detector model that identifies anomalous actions
         results_queue: Queue to publish inference results to
         clips_queue: Queue to consume video clips from
 
@@ -53,7 +54,7 @@ def inference_thread(
             pose_results = pose_estimator.inference_on_video(clip.frame_paths)
             h, w = clip.frame_shape
 
-            if len(pose_results) == 0:
+            if not any(d.get('bboxes', np.array([])).size for d in pose_results):
                 continue
 
             data = {"pose_results": pose_results, "img_shape": (h, w)}
@@ -63,7 +64,7 @@ def inference_thread(
                 inference_results, np.ndarray
             )
             if anomaly_detector:
-                inference_results = handle_anomaly_inference(model, inference_results)
+                inference_results = handle_anomaly_inference(anomaly_detector, inference_results)
 
             results_queue.put(inference_results)
 

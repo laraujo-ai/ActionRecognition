@@ -4,7 +4,7 @@ import numpy as np
 
 def handle_anomaly_inference(model, input_: np.ndarray):
 
-    input_scaled = model.scaler.transform(input_)
+    input_scaled = model.scaler.transform(input_.reshape(-1,512))
     input_proc = (
         model.pca.transform(input_scaled) if model.pca is not None else input_scaled
     )

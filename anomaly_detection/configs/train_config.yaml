@@ -18,7 +18,6 @@ dataset:
 
 model:
   config_path: "../posec3d_lib/configs/posec3d_feature_extractor.py"
-  feature_normalization: true  # Normalize feature vectors to unit length
   
   pca:
     enable: true

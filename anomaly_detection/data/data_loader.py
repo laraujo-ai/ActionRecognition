@@ -29,8 +29,7 @@ class VideoDataLoader:
         config: Dataset configuration including paths and category mappings
         verbose: Enable detailed logging and progress tracking
         pose_estimator: YOLOv8-pose model for keypoint detection
-        feature_extractor: PoseC3D model for pose sequence encoding
-        normalize_features: Whether to L2-normalize extracted feature vectors
+        feature_extractor: PoseC3D model for pose sequence encoding (already normalized)
     """
 
     def __init__(
@@ -64,7 +63,6 @@ class VideoDataLoader:
         self.feature_extractor = prov.get_feature_extractor(
             preprocessor, onnx_model_engine
         )
-        self.normalize_features = model_config.get("feature_normalization", True)
 
     def get_clips_path(self, directory: str, category: str) -> List[str]:
         """Retrieve video file paths for a specific action category.
@@ -134,11 +132,6 @@ class VideoDataLoader:
             pose_results = self.pose_estimator.inference_on_video(frame_paths)
             data = {"pose_results": pose_results, "img_shape": (h, w)}
             feature_vector = self.feature_extractor.inference(data)
-
-            if self.normalize_features:
-                norm = np.linalg.norm(feature_vector)
-                if norm > 0:
-                    feature_vector = feature_vector / norm
 
             return feature_vector
         finally:

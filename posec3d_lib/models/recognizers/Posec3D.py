@@ -171,5 +171,5 @@ class Posec3DFeatureExtractor(IRecognizer):
         """
         features = outputs[0]  # Just the first batch for now
         feature_vector = features.mean(axis=0)
-
+        feature_vector /= np.linalg.norm(feature_vector)
         return feature_vector
