@@ -26,7 +26,7 @@ class StreamProcessor(IMediaProcessor):
 
     Processes live RTSP video streams using GStreamer pipeline with NVIDIA GPU
     acceleration for H.264/H.265 decoding. Continuously captures frames and
-    creates non-overlapping video clips for action recognition processing.
+    creates overlapping video clips for action recognition processing.
 
     The processing pipeline:
     RTSP Source → RTP Depay → Parser → NV Decoder → Color Convert → App Sink
@@ -47,7 +47,9 @@ class StreamProcessor(IMediaProcessor):
         ```
     """
 
-    def __init__(self, rtsp_url: str, stream_codec : str ,clips_length: int, fps:int) -> None:
+    def __init__(
+        self, rtsp_url: str, stream_codec: str, clips_length: int, fps: int
+    ) -> None:
         """Initialize RTSP stream processor.
 
         Args:
@@ -97,11 +99,11 @@ class StreamProcessor(IMediaProcessor):
             RuntimeError: If pipeline creation or element linking fails
         """
 
-        # Create pipeline string for RTSP with NVIDIA decoding. The hardware decoder gives us back a NV12 format frame. 
+        # Create pipeline string for RTSP with NVIDIA decoding. The hardware decoder gives us back a NV12 format frame.
         # Unfortunately the VIC(Vision Image Compositor) software, which is what the nvvideoconvert is trying to use to convert our frame
         # to RGB does not suport this convertion operation. Therefore we include a basic videoconvert after the nvvideoconvert.
         # Now the nvvideoconvert just takes the NV12 buffer and transfers it to the CPU memory and the videoconvert gets us the RGB frame.
-        
+
         pipeline_str = f"""
         rtspsrc location="{self.rtsp_url}" latency=0 protocol=tcp !
         {self.DEPAY_MAP[self.stream_codec]} !
@@ -131,7 +133,7 @@ class StreamProcessor(IMediaProcessor):
 
         # Connect callback
         self.app_sink.connect("new-sample", self._on_new_sample)
-        
+
         # Add bus message handler for error monitoring
         bus = self.pipeline.get_bus()
         bus.add_signal_watch()
@@ -145,9 +147,9 @@ class StreamProcessor(IMediaProcessor):
             bus = self.pipeline.get_bus()
             if bus:
                 bus.remove_signal_watch()
-            
+
             self.pipeline.set_state(Gst.State.NULL)
-            self.pipeline = None    
+            self.pipeline = None
 
         if self.main_loop:
             self.main_loop.quit()
@@ -158,12 +160,12 @@ class StreamProcessor(IMediaProcessor):
         err, debug = msg.parse_error()
         logger.error(f"Pipeline error: {err} - Debug: {debug}")
         self.stop_event.set()
-        
+
     def _on_pipeline_warning(self, bus, msg):
         """Handle pipeline warning messages"""
         warn, debug = msg.parse_warning()
         logger.warning(f"Pipeline warning: {warn} - Debug: {debug}")
-        
+
     def _on_pipeline_info(self, bus, msg):
         """Handle pipeline info messages"""
         info, debug = msg.parse_info()
@@ -194,7 +196,9 @@ class StreamProcessor(IMediaProcessor):
             try:
                 # Convert buffer data to numpy array
                 frame_data = np.ndarray(
-                    shape=(self.height, self.width, 3), buffer=map_info.data, dtype=np.uint8
+                    shape=(self.height, self.width, 3),
+                    buffer=map_info.data,
+                    dtype=np.uint8,
                 )
                 frame = np.copy(frame_data)
                 self._process_frame(frame)
@@ -230,13 +234,16 @@ class StreamProcessor(IMediaProcessor):
         self.frame_counter += 1
 
         # Create clip when buffer is full
-        if self.clip_container is not None and len(self.clip_container) == self.clip_length_in_frames:
+        if (
+            self.clip_container is not None
+            and len(self.clip_container) == self.clip_length_in_frames
+        ):
             current_clip_frames = list(self.clip_container)
             clip = Clip(
                 frame_paths=current_clip_frames,
                 clip_size=len(current_clip_frames),
                 temp_dir=self.temp_dir,
-                frame_shape=(self.height, self.width)
+                frame_shape=(self.height, self.width),
             )
             self.clips_queue.put(clip)
             logger.debug(f"Created clip with {len(current_clip_frames)} frames")
